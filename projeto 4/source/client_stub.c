@@ -25,10 +25,8 @@ struct rtree_t *rtree_connect(const char *address_port){
         perror("Erro na alocação de memória no rtree_connect sockaddr_in");
         return NULL;
     }
-    
     //Copia o IPAdress e a Porta para uma nova variavel
     char *addressEport = strdup(address_port);
-    
     //Pega nessa nova variavel e separa-a por : para ir buscar o ipadress
     char *address = strtok(addressEport, ":");
     //Vai separar outra vez a variavel por \n para ir buscar a porta
@@ -42,7 +40,6 @@ struct rtree_t *rtree_connect(const char *address_port){
         free(rtree);
         return NULL;
     }
-
     //Liga o server à arvore remota
     rtree -> sock_in = server;
 

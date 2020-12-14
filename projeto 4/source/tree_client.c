@@ -17,7 +17,7 @@ static struct rtree_t *primary;
 static struct rtree_t *backup;
 static zhandle_t *zh;
 static int is_connected; 
-static char *root_path = "/chain";
+static char *root_path = "/kvstore";
 
 typedef struct String_vector zoo_string;
 static char *watcher_ctx = "ZooKeeper Data Watcher";
@@ -25,8 +25,11 @@ static char *watcher_ctx = "ZooKeeper Data Watcher";
 char str[50]; 
 
 void closeClient(){
-  rtree_disconnect(primary);
-  exit(0);
+    if(primary != NULL)
+        rtree_disconnect(primary);
+    if(backup != NULL)
+        rtree_disconnect(backup);  
+    exit(0);
 }
 
 void connection_watcher(zhandle_t *zzh, int type, int state, const char *path, void* context) {
@@ -56,6 +59,52 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
 			fprintf(stderr, "\n=== done ===\n");
 	    } 
 	}
+    
+    if(children_list -> count == 0){
+            //Do nothing
+    } else if(children_list -> count == 1){
+        printf("ENTRA NO ELSEIF TREE_CLIENT\n");
+        if(strcmp(children_list -> data[0], "primary") == 0){
+            printf("ENTRA NO ELSEIF TREE_CLIENT PRIMARY\n");
+            /*
+            if(backup != NULL)
+                rtree_disconnect(backup);
+            backup = NULL;
+            */
+            backup = NULL;
+            //meter a null caso antes houvesse um backup;
+        } else {
+            printf("ENTRA NO ELSEIF TREE_CLIENT ELSE\n");
+            if(primary != NULL)
+                rtree_disconnect(primary);
+            primary = NULL;
+            int backupIPLen = 100;
+            char backupIP[256] = "";
+            if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
+                printf("ERRO A IR BUSCAR DATA BACKUP 1 FILHO\n");
+            }
+            /*
+            if(backup != NULL)
+                rtree_disconnect(backup); //Problema, fazer esta linha fecha a linha de comandos atual e dá merda como atualizar isto?
+            backup = NULL;
+            primary = rtree_connect(backupIP);
+            */
+            primary = backup;
+            backup = NULL;
+        }
+    } else {
+        printf("ENTRA NO ELSE\n");
+        if(backup == NULL){
+            int backupIPLen = 100;
+            char backupIP[256] = "";
+            if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
+                printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
+            }
+            backup = rtree_connect(backupIP);
+        }
+    }
+
+
 }
 
 
@@ -68,19 +117,19 @@ int main(int argc, char** argv){
         perror("Chame a função da seguinte maneira: ./tree:client <ip do servidor>:<porta>\n");
         return -1;
     }
-
     char *adress_port_zk = strdup(argv[1]);
-    char *ip_port_primary = " ";
-    char *ip_port_backup = " ";
 
     zh = zookeeper_init(adress_port_zk, connection_watcher, 2000, 0, NULL, 0);
     if (zh == NULL)	{
 		printf("Error connecting to ZooKeeper server!\n"); //compromete transparencia
 		exit(-1);
 	}
-    printf("TESTE1\n");
+    int primaryIPLen = 100;
+    char primaryIP[256] = "";
+    int backupIPLen = 100;
+    char backupIP[256] = "";
+    sleep(3);
     if(is_connected){
-        printf("TESTE2\n");
         if(ZNONODE == zoo_exists(zh, root_path, 0, NULL)){ //Caso /kvstore não exista
             int new_root_path_len = 1024;
             char *new_root_path = malloc(new_root_path_len);
@@ -93,23 +142,44 @@ int main(int argc, char** argv){
         }
         
         zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
-        if (ZOK != zoo_wget_children(zh, root_path, &child_watcher, watcher_ctx, children_list)) {/*quando apanha sinal, chama o child_watcher()*/
-			fprintf(stderr, "Error setting watch at %s!\n", root_path); //compromete transparencia?
+        if (ZOK != zoo_wget_children(zh, root_path, &child_watcher, watcher_ctx, children_list)) {
+			fprintf(stderr, "Error setting watch at %s!\n", root_path); 
 		}
-        fprintf(stderr, "\n=== znode listing func=== [ %s ]", root_path); 
-		for (int i = 0; i < children_list->count; i++)  {
-			fprintf(stderr, "\n(%d): %s", i+1, children_list->data[i]);
-		}
-		fprintf(stderr, "\n=== done ===\n");
         
-        printf("Primary\n");
-        ip_port_primary = children_list -> data[0];
-        //ip_port_backup = children_list -> data[1];
+        switch(children_list -> count){
+            case 0:
+            printf("CASO 0\n");
+                perror("Não há servidores ligados");
+                return -1;
+            break;
+            case 1:
+                printf("CASO 1\n");
+                if(ZOK != zoo_get(zh, "/kvstore/primary", 0, primaryIP, &primaryIPLen, NULL)){
+                    printf("ERRO A IR BUSCAR DATA SWITCH 1 FILHO PRIMARY\n");
+                    return -1;
+                }
+                primary = rtree_connect(primaryIP); //Ligação ao servidor!
+            break;
+            case 2:
+            printf("CASO 2\n");
+                if(ZOK != zoo_get(zh, "/kvstore/primary", 0, primaryIP, &primaryIPLen, NULL)){
+                    printf("ERRO A IR BUSCAR DATA SWITCH 2 FILHOS PRIMARY \n");
+                    return -1;
+                }
+                if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
+                    printf("ERRO A IR BUSCAR DATA SWITCH 2 FILHOS BACKUP \n");
+                    return -1;
+                }
+                primary = rtree_connect(primaryIP); //Ligação ao servidor!
+                backup = rtree_connect(backupIP); //Ligação ao servidor!
+            break;
+            default:
+                printf("Erro\n");
+            //do nothing
+        }             
         
-    }
-    printf("IP %s\n", ip_port_primary);
-    primary = rtree_connect(ip_port_primary); //Ligação ao servidor!
-
+    } 
+    
     if(primary == NULL){
         perror("Erro a fazer a ligação ao server");
         return -1;
@@ -217,7 +287,7 @@ int main(int argc, char** argv){
 
                 if(data == NULL){
                     printf("A key não existe\n");
-                    //free(key);
+                    free(key);
                 } else {
                     printf("O valor associado à key %s é: %s.\n", key, (char *) data -> data);
                     data_destroy(data);

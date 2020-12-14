@@ -29,8 +29,11 @@ server1:
 server2:
 	./$(BIN_DIR)/treeServer 1025 127.0.0.1:2181
 
-mem_server:
-	$(MEMORY) ./$(BIN_DIR)/treeServer 1024
+mem_server1:
+	./$(BIN_DIR)/treeServer 1024 127.0.0.1:2181
+
+mem_server2:
+	./$(BIN_DIR)/treeServer 1025 127.0.0.1:2181
 
 script:
 	./teste_client.sh comandos_client.txt
