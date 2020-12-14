@@ -14,31 +14,38 @@ CFLAGS = -g -Wall -O2 -iquote $(INC_DIR)
 LDFLAGS = ${PROTOC_DIR}$(LIB_DIR)/libprotobuf-c.a
 MEMORY = valgrind --leak-check=full --track-origins=yes --show-leak-kinds=all -v
 
+ZooFlag = -lzookeeper_mt
+
+
 run:
+	make clean
 	make proto
 	make treeClient
 	make treeServer
 
-server:
-	./$(BIN_DIR)/treeServer 40000
+server1:
+	./$(BIN_DIR)/treeServer 1024 127.0.0.1:2181
+
+server2:
+	./$(BIN_DIR)/treeServer 1025 127.0.0.1:2181
 
 mem_server:
-	$(MEMORY) ./$(BIN_DIR)/treeServer 40000
+	$(MEMORY) ./$(BIN_DIR)/treeServer 1024
 
 script:
 	./teste_client.sh comandos_client.txt
 
 client:
-	./$(BIN_DIR)/treeClient 127.0.0.1:40000
+	./$(BIN_DIR)/treeClient 127.0.0.1:2181
 
 %.o: $(SRC_DIR)/%.c $($@)
 	$(CC) $(CFLAGS) -MD -o $(OBJ_DIR)/$@ -c $<
 
-treeServer: tree_server.o network_server.o tree_skel.o message.o sdmessage.pb-c.o treeLib.o
-	$(CC) -pthread -lpthread $(addprefix $(OBJ_DIR)/, tree_server.o network_server.o tree_skel.o message.o sdmessage.pb-c.o) $(LIB_DIR)/treeLib.o $(LDFLAGS) -o $(BIN_DIR)/$@	
+treeServer: tree_server.o network_server.o tree_skel.o message.o sdmessage.pb-c.o treeLib.o client_stub.o network_client.o
+	$(CC) -pthread -lpthread $(addprefix $(OBJ_DIR)/, tree_server.o network_server.o tree_skel.o message.o sdmessage.pb-c.o client_stub.o network_client.o) $(LIB_DIR)/treeLib.o $(LDFLAGS) -o $(BIN_DIR)/$@ $(ZooFlag)
 
 treeClient: tree_client.o clientLib.o
-	$(CC) -pthread -lpthread $(OBJ_DIR)/tree_client.o $(LIB_DIR)/clientLib.o $(LDFLAGS) -o $(BIN_DIR)/$@
+	$(CC) -pthread -lpthread $(OBJ_DIR)/tree_client.o $(LIB_DIR)/clientLib.o $(LDFLAGS) -o $(BIN_DIR)/$@ $(ZooFlag)
 
 proto:
 	protoc --c_out=. sdmessage.proto

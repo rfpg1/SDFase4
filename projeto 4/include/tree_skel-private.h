@@ -2,6 +2,8 @@
 #define _TREE_SKEL__PRIVATE_H
 
 #include "sdmessage.pb-c.h"
+#include "client_stub.h"
+#include "client_stub-private.h"
 #include <signal.h>
 
 struct task_t {

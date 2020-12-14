@@ -9,7 +9,6 @@
 
 
 struct rtree_t *rtree_connect(const char *address_port){
-
     struct rtree_t *rtree;
     struct sockaddr_in *server;
 
@@ -26,18 +25,17 @@ struct rtree_t *rtree_connect(const char *address_port){
         perror("Erro na alocação de memória no rtree_connect sockaddr_in");
         return NULL;
     }
-
+    
     //Copia o IPAdress e a Porta para uma nova variavel
     char *addressEport = strdup(address_port);
+    
     //Pega nessa nova variavel e separa-a por : para ir buscar o ipadress
     char *address = strtok(addressEport, ":");
     //Vai separar outra vez a variavel por \n para ir buscar a porta
     char *port = strtok(NULL, "\n");
-    
     // Preenche estrutura server com endereço do servidor para estabelecer conexão
     server -> sin_family = AF_INET; //Endereços!
     server -> sin_port = htons(atoi(port)); //Porta TCP
-
     if(inet_pton(AF_INET, address, &server -> sin_addr.s_addr) < 0){ //Setup ao endereço IP
         perror("Erro ao fazer inet_pton rtree_connect");
         free(server);

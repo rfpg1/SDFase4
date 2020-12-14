@@ -5,11 +5,34 @@
  * Daniel Batista fc52773
 **/
 
-#include "tree_skel.h"
-#include "serialization.h"
-#include "tree-private.h"
-#include "tree_skel-private.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <pthread.h>
+#include <signal.h>
+///////////fase4/////////////
+#include <errno.h>
+#include <unistd.h> //para funcao sleep()
+
+#include <netdb.h> //ver se eh preciso
+#include <sys/types.h> //ver se eh preciso
+#include <sys/socket.h> //ver se eh preciso
+#include <netinet/in.h> //ver se eh preciso
+#include <pthread.h>
+#include <arpa/inet.h> //ver se eh preciso
+
+#include "client_stub-private.h"
+#include "client_stub.h"
+////////////////////////////////////
+
+#include "tree.h"
+#include "message-private.h"
+#include "tree_skel-private.h"
+#include "tree_skel.h"
+#include "sdmessage.pb-c.h"
+#include "tree-private.h"
+
+#include <zookeeper/zookeeper.h>
 
 struct tree_t *tree;
 
@@ -24,7 +47,165 @@ pthread_cond_t queue_not_empty;
 
 int termina_thread = 0; //False por default
 
-int tree_skel_init(){
+/********************** 4 FASE ************************/
+zhandle_t *zh;
+int is_connected;
+char *root_path = "/kvstore"; 
+char *server_ID; //Identificador do node dester servidor no ZooKeeper
+typedef struct String_vector zoo_string;
+static char *watcher_ctx = "ZooKeeper Data Watcher";
+
+struct rtree_t *backup = NULL;
+
+void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void *watcher_ctx) {
+	zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
+	//int zoo_data_len = ZDATALEN; //TODO nao estah a ser usado 
+	if (state == ZOO_CONNECTED_STATE) { //TODO ver se dah para por simplesmente is_connected
+		if (type == ZOO_CHILD_EVENT) {
+	 	   /* Get the updated children and reset the watch */ 
+ 			if (ZOK != zoo_wget_children(zh, root_path, child_watcher, watcher_ctx, children_list)) {
+ 				fprintf(stderr, "Error setting watch at %s!\n", root_path); 
+ 			}
+            //TODO apagar a parte de imprimir a lista
+			fprintf(stderr, "\n=== znode listing func=== [ %s ]", root_path); 
+			for (int i = 0; i < children_list->count; i++)  {
+				fprintf(stderr, "\n(%d): %s", i+1, children_list->data[i]);
+			}
+			fprintf(stderr, "\n=== done ===\n");
+	    } 
+	}
+}
+
+
+void connection_watcher(zhandle_t *zzh, int type, int state, const char *path, void* context) {
+	if (type == ZOO_SESSION_EVENT) {
+		if (state == ZOO_CONNECTED_STATE) {
+			is_connected = 1; 
+		} else {
+			is_connected = 0; 
+		}
+	}
+}
+
+int tree_skel_init(char *port, char *ip_port_zk){
+
+    zh = zookeeper_init(ip_port_zk, connection_watcher, 2000, 0, NULL, 0); //Ligação ao servidor do ZooKeeper
+    if(zh == NULL){
+        perror("Erro a ligar ao servidor do ZooKeeper");
+        return -1;
+    }
+    sleep(3); //Dar tempo para a ligação acontecer
+    if(is_connected){
+        if(ZNONODE == zoo_exists(zh, root_path, 0, NULL)){ //Caso /kvstore não exista
+            int new_root_path_len = 1024;
+            char *new_root_path = malloc(new_root_path_len);
+            if(ZOK != zoo_create(zh, root_path, NULL, 0, &ZOO_OPEN_ACL_UNSAFE, 0, new_root_path, new_root_path_len)){
+                fprintf(stderr, "Erro a criar znode no path %s!\n", root_path);
+                return -1;
+            }
+            printf("Normal ZNode criado! ZNode path: %s\n", new_root_path);
+            free(new_root_path);
+        }
+        zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
+
+        /*-----------------------mostrar os child nodes de /kvstore atuais----------------------*/
+        if (ZOK != zoo_wget_children(zh, root_path, &child_watcher, watcher_ctx, children_list)) {/*quando apanha sinal, chama o child_watcher()*/
+			fprintf(stderr, "Error setting watch at %s!\n", root_path); //compromete transparencia?
+		}
+
+        if(children_list -> count < 1){
+            /********************************************/
+            //Criar prefixo para o primary
+            char node_path[50] = "";
+            strcat(node_path, root_path);
+            strcat(node_path, "/primary");
+            /********************************************/
+            int server_ID_len = 1024;
+            server_ID = malloc(server_ID_len);
+
+            /********************************************/
+            char hostBuffer[256];
+            char *IPBuffer;
+            struct hostent *host_entry;
+            int hostname;
+
+            hostname = gethostname(hostBuffer, sizeof(hostBuffer));
+            if(hostname == -1){
+                perror("gethostname");
+                return -1;
+            }
+            host_entry = gethostbyname(hostBuffer);
+            if(host_entry == NULL){
+                perror("gethostbyname");
+                return -1;
+            }
+
+            // To convert an Internet network address into ASCII string 
+            IPBuffer = inet_ntoa(*((struct in_addr*) host_entry->h_addr_list[0])); 
+
+            /*---------------concatenar ip com port do servidor---------------*/
+            char *ip_port = IPBuffer; 
+            strcat(ip_port, ":");
+            strcat(ip_port, port);
+            /*----------------------------------------------------------------*/
+            if(ZOK != zoo_create(zh, node_path, ip_port, strlen(ip_port), &ZOO_OPEN_ACL_UNSAFE, ZOO_EPHEMERAL, server_ID, server_ID_len)){
+                fprintf(stderr, "Error creating znode from path %s!\n", node_path);
+                return -1;
+            }
+            fprintf(stderr, "Ephemeral ZNode created! ZNode path: %s\n", server_ID);
+            sleep(5);
+        } else if(children_list -> count == 1){
+            backup = rtree_connect(ip_port_zk);
+            /********************************************/
+            //Criar prefixo para o primary
+            char node_path[50] = "";
+            strcat(node_path, root_path);
+            strcat(node_path, "/backup");
+            /********************************************/
+            int server_ID_len = 1024;
+            server_ID = malloc(server_ID_len);
+
+            /********************************************/
+            char hostBuffer[256];
+            char *IPBuffer;
+            struct hostent *host_entry;
+            int hostname;
+
+            hostname = gethostname(hostBuffer, sizeof(hostBuffer));
+            if(hostname == -1){
+                perror("gethostname");
+                return -1;
+            }
+            host_entry = gethostbyname(hostBuffer);
+            if(host_entry == NULL){
+                perror("gethostbyname");
+                return -1;
+            }
+
+            // To convert an Internet network address into ASCII string 
+            IPBuffer = inet_ntoa(*((struct in_addr*) host_entry->h_addr_list[0])); 
+
+            /*---------------concatenar ip com port do servidor---------------*/
+            char *ip_port = IPBuffer; 
+            strcat(ip_port, ":");
+            strcat(ip_port, port);
+            /*----------------------------------------------------------------*/
+            if(ZOK != zoo_create(zh, node_path, ip_port, strlen(ip_port), &ZOO_OPEN_ACL_UNSAFE, ZOO_EPHEMERAL, server_ID, server_ID_len)){
+                fprintf(stderr, "Error creating znode from path %s!\n", node_path);
+                return -1;
+            }
+            fprintf(stderr, "Ephemeral ZNode created! ZNode path: %s\n", server_ID);
+            sleep(5);
+        } 
+        else {
+            printf("Demasiados servers");
+            return -1;
+        }
+
+    }
+
+
+
     if(tree == NULL){
         tree = tree_create();
     }
@@ -241,12 +422,21 @@ void *process_task(){
         pthread_mutex_lock(&tree_lock);
         if(task -> op == 0){// É o Del
             tree_del(tree, task -> key);
+            if(backup != NULL){
+                printf("BACKUP\n");
+                rtree_del(backup, task -> key);
+            }
             op_count++; //Mesmo se der erro devemos contar a operacao como executada
         }
 
         if(task -> op == 1){// É o put
             struct data_t *data = data_create2(task -> datasize, task -> data);
             tree_put(tree, task -> key, data);
+            if(backup != NULL){
+                printf("BACKUP\n");
+                struct entry_t *entrada = entry_create(task -> key, data);
+                rtree_put(backup, entrada);
+            }
             op_count++; //Mesmo se der erro devemos contar a operacao como executada
             data_destroy(data);
         }

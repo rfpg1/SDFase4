@@ -10,14 +10,52 @@
 #include <string.h>
 #include <signal.h>
 #include "client_stub.h"
+#include "zookeeper/zookeeper.h"
 
-static struct rtree_t *rtree;
+
+static struct rtree_t *primary;
+static struct rtree_t *backup;
+static zhandle_t *zh;
+static int is_connected; 
+static char *root_path = "/chain";
+
+typedef struct String_vector zoo_string;
+static char *watcher_ctx = "ZooKeeper Data Watcher";
 
 char str[50]; 
 
 void closeClient(){
-  rtree_disconnect(rtree);
+  rtree_disconnect(primary);
   exit(0);
+}
+
+void connection_watcher(zhandle_t *zzh, int type, int state, const char *path, void* context) {
+	if (type == ZOO_SESSION_EVENT) {
+		if (state == ZOO_CONNECTED_STATE) {
+			is_connected = 1; 
+		} else {
+			is_connected = 0; 
+		}
+	}
+}
+
+void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void *watcher_ctx) {
+	zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
+	//int zoo_data_len = ZDATALEN; //TODO nao estah a ser usado 
+	if (state == ZOO_CONNECTED_STATE) { //TODO ver se dah para por simplesmente is_connected
+		if (type == ZOO_CHILD_EVENT) {
+	 	   /* Get the updated children and reset the watch */ 
+ 			if (ZOK != zoo_wget_children(zh, root_path, child_watcher, watcher_ctx, children_list)) {
+ 				fprintf(stderr, "Error setting watch at %s!\n", root_path); 
+ 			}
+            //TODO apagar a parte de imprimir a lista
+			fprintf(stderr, "\n=== znode listing func=== [ %s ]", root_path); 
+			for (int i = 0; i < children_list->count; i++)  {
+				fprintf(stderr, "\n(%d): %s", i+1, children_list->data[i]);
+			}
+			fprintf(stderr, "\n=== done ===\n");
+	    } 
+	}
 }
 
 
@@ -31,9 +69,48 @@ int main(int argc, char** argv){
         return -1;
     }
 
-    rtree = rtree_connect(argv[1]); //Ligação ao servidor!
+    char *adress_port_zk = strdup(argv[1]);
+    char *ip_port_primary = " ";
+    char *ip_port_backup = " ";
 
-    if(rtree == NULL){
+    zh = zookeeper_init(adress_port_zk, connection_watcher, 2000, 0, NULL, 0);
+    if (zh == NULL)	{
+		printf("Error connecting to ZooKeeper server!\n"); //compromete transparencia
+		exit(-1);
+	}
+    printf("TESTE1\n");
+    if(is_connected){
+        printf("TESTE2\n");
+        if(ZNONODE == zoo_exists(zh, root_path, 0, NULL)){ //Caso /kvstore não exista
+            int new_root_path_len = 1024;
+            char *new_root_path = malloc(new_root_path_len);
+            if(ZOK != zoo_create(zh, root_path, NULL, 0, &ZOO_OPEN_ACL_UNSAFE, 0, new_root_path, new_root_path_len)){
+                fprintf(stderr, "Erro a criar znode no path %s!\n", root_path);
+                return -1;
+            }
+            printf("Normal ZNode criado! ZNode path: %s\n", new_root_path);
+            free(new_root_path);
+        }
+        
+        zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
+        if (ZOK != zoo_wget_children(zh, root_path, &child_watcher, watcher_ctx, children_list)) {/*quando apanha sinal, chama o child_watcher()*/
+			fprintf(stderr, "Error setting watch at %s!\n", root_path); //compromete transparencia?
+		}
+        fprintf(stderr, "\n=== znode listing func=== [ %s ]", root_path); 
+		for (int i = 0; i < children_list->count; i++)  {
+			fprintf(stderr, "\n(%d): %s", i+1, children_list->data[i]);
+		}
+		fprintf(stderr, "\n=== done ===\n");
+        
+        printf("Primary\n");
+        ip_port_primary = children_list -> data[0];
+        //ip_port_backup = children_list -> data[1];
+        
+    }
+    printf("IP %s\n", ip_port_primary);
+    primary = rtree_connect(ip_port_primary); //Ligação ao servidor!
+
+    if(primary == NULL){
         perror("Erro a fazer a ligação ao server");
         return -1;
     }
@@ -52,7 +129,7 @@ int main(int argc, char** argv){
         if(strncmp(metodo, "\n", strlen("\n")) != 0){ //Não dar simplesmente enter, se der enter volta ao while
             if(strncmp(metodo, "quit", strlen("quit")) == 0){
                 //Desliga-se do servidor
-                rtree_disconnect(rtree);
+                rtree_disconnect(primary);
                 break;
             /*************************************PUT*****************************************/ 
             }else if(strncmp(metodo, "put", strlen("put")) == 0){
@@ -69,7 +146,7 @@ int main(int argc, char** argv){
                 struct data_t *data = data_create2(strlen(value) + 1, strdup(value));
                 struct entry_t *entry = entry_create(strdup(key), data);
                 //Chama o método para meter a entry na arvore
-                int result = rtree_put(rtree, entry);
+                int result = rtree_put(primary, entry);
                 if(result < 0){
                     printf("Erro no put!\n");
                 } else {
@@ -79,7 +156,7 @@ int main(int argc, char** argv){
             /*************************************SIZE*****************************************/ 
             } else if(strncmp(metodo, "size", strlen("size")) == 0){
                 //Chama o método para saber o size da tree
-                int size = rtree_size(rtree);
+                int size = rtree_size(primary);
                 printf("Tree size: %d\n", size);
 
             /*************************************DEL*****************************************/ 
@@ -94,7 +171,7 @@ int main(int argc, char** argv){
                 }
 
                 //Chama o método para apagar a key da tree
-                int result = rtree_del(rtree, strdup(key));
+                int result = rtree_del(primary, strdup(key));
 
                 if(result < 0){
                     printf("A key não existe!\n");
@@ -105,13 +182,13 @@ int main(int argc, char** argv){
             /*************************************GETKEYS*****************************************/ 
             } else if(strncmp(metodo, "getkeys", strlen("getkeys")) == 0){
                 //Chama o método para ir buscar as varias keys da tree
-                char ** keys = rtree_get_keys(rtree);
+                char ** keys = rtree_get_keys(primary);
                 //Caso isto esteja NULL é porque houve um erro
                 if(keys == NULL){
                     printf("A tree esta vazia\n");
                     continue;
                 }
-                int size = rtree_size(rtree);
+                int size = rtree_size(primary);
                 printf("As várias keys são: \n");
                 int i = 0;
                 if(size > 0){
@@ -136,7 +213,7 @@ int main(int argc, char** argv){
                     continue;
                 }
                 //Chama o método para ir buscar a data associada à key
-                struct data_t *data = rtree_get(rtree, strdup(key));
+                struct data_t *data = rtree_get(primary, strdup(key));
 
                 if(data == NULL){
                     printf("A key não existe\n");
@@ -149,7 +226,7 @@ int main(int argc, char** argv){
             /*************************************HEIGHT*****************************************/ 
             } else if(strncmp(metodo, "height", strlen("height")) == 0){
                 //Chama o método para saber a height da tree
-                int height = rtree_height(rtree);
+                int height = rtree_height(primary);
                 printf("Tree height: %d\n", height);
 
             /*************************************VERIFY*****************************************/ 
@@ -163,7 +240,7 @@ int main(int argc, char** argv){
                     continue;
                 }
                 //Chama o método para ir verificar se a operação foi feita
-                int verify = rtree_verify(rtree, atoi(key));
+                int verify = rtree_verify(primary, atoi(key));
 
                 if(verify < 0){
                     printf("A operação %d ainda não foi feita\n", atoi(key));

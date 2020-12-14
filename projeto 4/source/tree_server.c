@@ -23,9 +23,9 @@ int main (int argc, char **argv) {
     signal(SIGINT,closeClient); //Se fechar do nada, interrupção forçada ele faz a função fechar
     signal(SIGPIPE, SIG_IGN); //Se receber o sinal SIGPIPE, ele ignora (SIG_IGN)
 
-    if(argc != 2){ //Tem de ter exatamente 2 argumentos, ./nomeDaClasse Porta
-        printf("Uso: ./treeServer <porto_servidor>\n");
-        printf("Exemplo de uso: ./treeServer 12345\n");
+    if(argc != 3){ //Tem de ter exatamente 2 argumentos, ./nomeDaClasse Porta
+        printf("Uso: ./treeServer <porto_servidor> <IPZooKeeper>:<PORTAZooKeeper>\n");
+        printf("Exemplo de uso: ./treeServer 12345 127.0.0.1:2181\n");
         return -1;
     }
 
@@ -38,8 +38,8 @@ int main (int argc, char **argv) {
         return -1;
     }
 
-    if(tree_skel_init() < 0){ //Inicializa a tree
-        perror("Erro ao inicializar a tree");
+    if(tree_skel_init(argv[1], argv[2]) < 0){ //Inicializa a tree
+        perror("Erro ao inicializar a tree ou já há 2 servidores a correr");
         network_server_close();
         return -1;
     }

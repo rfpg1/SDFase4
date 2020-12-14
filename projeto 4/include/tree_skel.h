@@ -4,13 +4,15 @@
 #include "sdmessage.pb-c.h"
 #include "tree.h"
 #include "message-private.h"
+#include "client_stub.h"
+#include "client_stub-private.h"
 
 /* Inicia o skeleton da árvore.
  * O main() do servidor deve chamar esta função antes de poder usar a
  * função invoke(). 
  * Retorna 0 (OK) ou -1 (erro, por exemplo OUT OF MEMORY)
  */
-int tree_skel_init();
+int tree_skel_init(char *port, char *ip_port_zk);
 
 /* Liberta toda a memória e recursos alocados pela função tree_skel_init.
  */
