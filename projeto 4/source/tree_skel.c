@@ -107,8 +107,7 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
             server_ID = "/kvstore/primary";
             //TODO transformar backup em primary
             //Delete do znode atual
-            //criação de um novo
-            
+            //criação de um novo   
         }
     } else {
         printf("THIS SERVER ID: %s\n", server_ID);
