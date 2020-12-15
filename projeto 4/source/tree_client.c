@@ -25,10 +25,17 @@ static char *watcher_ctx = "ZooKeeper Data Watcher";
 char str[50]; 
 
 void closeClient(){
-    if(primary != NULL)
+    if(primary != NULL){
+        printf("Adeus primary\n");
         rtree_disconnect(primary);
-    if(backup != NULL)
-        rtree_disconnect(backup);  
+    }
+    
+    if(backup != NULL){
+        printf("Adeus backup\n");
+        rtree_disconnect(backup); 
+    }
+         
+    
     exit(0);
 }
 
@@ -66,18 +73,19 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
         printf("ENTRA NO ELSEIF TREE_CLIENT\n");
         if(strcmp(children_list -> data[0], "primary") == 0){
             printf("ENTRA NO ELSEIF TREE_CLIENT PRIMARY\n");
-            /*
+            
             if(backup != NULL)
                 rtree_disconnect(backup);
             backup = NULL;
-            */
-            backup = NULL;
+            
             //meter a null caso antes houvesse um backup;
         } else {
             printf("ENTRA NO ELSEIF TREE_CLIENT ELSE\n");
+            
             if(primary != NULL)
                 rtree_disconnect(primary);
             primary = NULL;
+            
             int backupIPLen = 100;
             char backupIP[256] = "";
             if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
@@ -87,9 +95,14 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
             if(backup != NULL)
                 rtree_disconnect(backup); //Problema, fazer esta linha fecha a linha de comandos atual e dá merda como atualizar isto?
             backup = NULL;
-            primary = rtree_connect(backupIP);
             */
+            //primary = rtree_connect(backupIP);
             primary = backup;
+            /*
+            if(primary != NULL){
+                primary = backup;
+            }
+            */
             backup = NULL;
         }
     } else {
@@ -170,7 +183,9 @@ int main(int argc, char** argv){
                     printf("ERRO A IR BUSCAR DATA SWITCH 2 FILHOS BACKUP \n");
                     return -1;
                 }
+                printf("IPPRIMARY: %s\n", primaryIP);
                 primary = rtree_connect(primaryIP); //Ligação ao servidor!
+                printf("IPBACKUP: %s\n", backupIP);
                 backup = rtree_connect(backupIP); //Ligação ao servidor!
             break;
             default:
@@ -179,7 +194,7 @@ int main(int argc, char** argv){
         }             
         
     } 
-    
+    int last_assigned = 0;
     if(primary == NULL){
         perror("Erro a fazer a ligação ao server");
         return -1;
@@ -199,10 +214,14 @@ int main(int argc, char** argv){
         if(strncmp(metodo, "\n", strlen("\n")) != 0){ //Não dar simplesmente enter, se der enter volta ao while
             if(strncmp(metodo, "quit", strlen("quit")) == 0){
                 //Desliga-se do servidor
-                rtree_disconnect(primary);
+                closeClient();
                 break;
             /*************************************PUT*****************************************/ 
             }else if(strncmp(metodo, "put", strlen("put")) == 0){
+                if(backup == NULL){
+                    printf("Servidor backup desligado não é possivel executar pedidos de escrita/leitura\n");
+                    continue;
+                }
                 //Criar a entry
                 char *key = strtok(NULL, " "); //ir buscar a 2 palavra do stdin
                 char *value = strtok(NULL, "\n"); //ir buscar a 3 palavra do stdin
@@ -217,6 +236,7 @@ int main(int argc, char** argv){
                 struct entry_t *entry = entry_create(strdup(key), data);
                 //Chama o método para meter a entry na arvore
                 int result = rtree_put(primary, entry);
+                last_assigned++;
                 if(result < 0){
                     printf("Erro no put!\n");
                 } else {
@@ -225,12 +245,24 @@ int main(int argc, char** argv){
 
             /*************************************SIZE*****************************************/ 
             } else if(strncmp(metodo, "size", strlen("size")) == 0){
+                if(backup == NULL){
+                    printf("Servidor backup desligado não é possivel executar pedidos de escrita/leitura\n");
+                    continue;
+                }
                 //Chama o método para saber o size da tree
-                int size = rtree_size(primary);
+                int temp = rtree_verify(backup, last_assigned);
+                while(temp != 1){
+                    temp = rtree_verify(backup, last_assigned);
+                }
+                int size = rtree_size(backup);
                 printf("Tree size: %d\n", size);
 
             /*************************************DEL*****************************************/ 
             } else if(strncmp(metodo, "del", strlen("del")) == 0){
+                if(backup == NULL){
+                    printf("Servidor backup desligado não é possivel executar pedidos de escrita/leitura\n");
+                    continue;
+                }
                 //Vai buscar a key que é para apagar
                 char *key = strtok(NULL, "\n");
 
@@ -242,7 +274,7 @@ int main(int argc, char** argv){
 
                 //Chama o método para apagar a key da tree
                 int result = rtree_del(primary, strdup(key));
-
+                last_assigned++;
                 if(result < 0){
                     printf("A key não existe!\n");
                 } else {
@@ -251,14 +283,23 @@ int main(int argc, char** argv){
             
             /*************************************GETKEYS*****************************************/ 
             } else if(strncmp(metodo, "getkeys", strlen("getkeys")) == 0){
+                if(backup == NULL){
+                    printf("Servidor backup desligado não é possivel executar pedidos de escrita/leitura\n");
+                    continue;
+                }
                 //Chama o método para ir buscar as varias keys da tree
-                char ** keys = rtree_get_keys(primary);
+                int temp = rtree_verify(backup, last_assigned);
+                while(temp != 1){
+                    temp = rtree_verify(backup, last_assigned);
+                }
+
+                char ** keys = rtree_get_keys(backup);
                 //Caso isto esteja NULL é porque houve um erro
                 if(keys == NULL){
                     printf("A tree esta vazia\n");
                     continue;
                 }
-                int size = rtree_size(primary);
+                int size = rtree_size(backup);
                 printf("As várias keys são: \n");
                 int i = 0;
                 if(size > 0){
@@ -274,6 +315,10 @@ int main(int argc, char** argv){
             
             /*************************************GET*****************************************/ 
             }else if(strncmp(metodo, "get", strlen("get")) == 0){
+                if(backup == NULL){
+                    printf("Servidor backup desligado não é possivel executar pedidos de escrita/leitura\n");
+                    continue;
+                }
                 //Vai buscar a key que é para saber o data associado
                 char *key = strtok(NULL, "\n");
 
@@ -282,12 +327,16 @@ int main(int argc, char** argv){
                     perror("Ex: get A");
                     continue;
                 }
+                int temp = rtree_verify(backup, last_assigned);
+                while(temp != 1){
+                    temp = rtree_verify(backup, last_assigned);
+                }
                 //Chama o método para ir buscar a data associada à key
-                struct data_t *data = rtree_get(primary, strdup(key));
+                struct data_t *data = rtree_get(backup, strdup(key));
 
                 if(data == NULL){
                     printf("A key não existe\n");
-                    free(key);
+                    //free(key);
                 } else {
                     printf("O valor associado à key %s é: %s.\n", key, (char *) data -> data);
                     data_destroy(data);
@@ -295,12 +344,24 @@ int main(int argc, char** argv){
 
             /*************************************HEIGHT*****************************************/ 
             } else if(strncmp(metodo, "height", strlen("height")) == 0){
+                if(backup == NULL){
+                    printf("Servidor backup desligado não é possivel executar pedidos de escrita/leitura\n");
+                    continue;
+                }
                 //Chama o método para saber a height da tree
-                int height = rtree_height(primary);
+                int temp = rtree_verify(backup, last_assigned);
+                while(temp != 1){
+                    temp = rtree_verify(backup, last_assigned);
+                }
+                int height = rtree_height(backup);
                 printf("Tree height: %d\n", height);
 
             /*************************************VERIFY*****************************************/ 
             } else if(strncmp(metodo, "verify", strlen("verify")) == 0){
+                if(backup == NULL){
+                    printf("Servidor backup desligado não é possivel executar pedidos de escrita/leitura\n");
+                    continue;
+                }
                 //Operalão a verificar se foi feita
                 char *key = strtok(NULL, "\n");
 
@@ -309,8 +370,12 @@ int main(int argc, char** argv){
                     perror("Ex: verify 1");
                     continue;
                 }
+                int temp = rtree_verify(backup, last_assigned);
+                while(temp != 1){
+                    temp = rtree_verify(backup, last_assigned);
+                }
                 //Chama o método para ir verificar se a operação foi feita
-                int verify = rtree_verify(primary, atoi(key));
+                int verify = rtree_verify(backup, atoi(key));
 
                 if(verify < 0){
                     printf("A operação %d ainda não foi feita\n", atoi(key));

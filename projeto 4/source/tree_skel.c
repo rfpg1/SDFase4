@@ -56,6 +56,8 @@ typedef struct String_vector zoo_string;
 static char *watcher_ctx = "ZooKeeper Data Watcher";
 
 struct rtree_t *backup = NULL;
+char *IPBACKUP;
+char *IPPrimary;
 
 void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void *watcher_ctx) {
 	zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
@@ -73,57 +75,73 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
 			}
 			fprintf(stderr, "\n=== done ===\n");
 	    } 
-	}
-    // ---------------------------------------------------------------------------------------------------------
 
-    if(children_list -> count == 1){
-        printf("ENTRA NO IF TREE_SKEL\n");
-        if(strcmp(children_list -> data[0], "primary") == 0){
-            printf("1 Filho PRIMARY\n");
-            if(backup != NULL)
-                rtree_disconnect(backup);
-            backup = NULL;
-            //meter a null caso antes houvesse um backup;
+        // ---------------------------------------------------------------------------------------------------------
+
+        if(children_list -> count == 1){
+            printf("ENTRA NO IF TREE_SKEL\n");
+            if(strcmp(children_list -> data[0], "primary") == 0){
+                printf("1 Filho PRIMARY\n");
+                
+                if(backup != NULL){
+                    rtree_disconnect(backup);
+                }
+                backup = NULL;
+                
+                IPBACKUP = NULL;
+                //meter a null caso antes houvesse um backup;
+            } else {
+                printf("1 Filho BACKUP\n");
+                
+                int backupIPLen = 100;
+                
+                char backupIP[256] = "";
+                
+                if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
+                    printf("ERRO A IR BUSCAR DATA BACKUP 1 FILHO\n");
+                    exit(-1);
+                }
+                IPPrimary = NULL;
+                if(ZOK != zoo_delete(zh, "/kvstore/backup", -1)){
+                    printf("DELETE DO BACKUP\n");
+                    exit(-1);
+                }
+                char *node_path = "/kvstore/primary";
+                if(ZOK != zoo_create(zh, node_path, backupIP, strlen(backupIP), &ZOO_OPEN_ACL_UNSAFE, ZOO_EPHEMERAL, NULL, 0)){
+                    fprintf(stderr, "Error creating znode from path %s!\n", node_path);
+                    exit(-1);
+                }
+                server_ID = "/kvstore/primary";
+                //TODO transformar backup em primary
+                //Delete do znode atual
+                //criação de um novo   
+            }
         } else {
-            printf("1 Filho BACKUP\n");
-            
-            int backupIPLen = 100;
-            
-            char backupIPT[256] = "";
-            
-            if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIPT, &backupIPLen, NULL)){
-                printf("ERRO A IR BUSCAR DATA BACKUP 1 FILHO\n");
-                exit(-1);
-            }
-            if(ZOK != zoo_delete(zh, "/kvstore/backup", -1)){
-                printf("DELETE DO BACKUP\n");
-                exit(-1);
-            }
-            char *node_path = "/kvstore/primary";
-            if(ZOK != zoo_create(zh, node_path, backupIPT, strlen(backupIPT), &ZOO_OPEN_ACL_UNSAFE, ZOO_EPHEMERAL, NULL, 0)){
-                fprintf(stderr, "Error creating znode from path %s!\n", node_path);
-                exit(-1);
-            }
-            server_ID = "/kvstore/primary";
-            //TODO transformar backup em primary
-            //Delete do znode atual
-            //criação de um novo   
-        }
-    } else {
-        printf("THIS SERVER ID: %s\n", server_ID);
-        if(strcmp(server_ID, "/kvstore/primary") == 0){
-            if(backup == NULL){
+            printf("THIS SERVER ID: %s\n", server_ID);
+            if(strcmp(server_ID, "/kvstore/primary") == 0){
+                if(backup == NULL){
+                    int backupIPLen = 100;
+                    char backupIP[256] = "";
+                    if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
+                        printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
+                        exit(-1);
+                    }
+                    printf("BACKIP: %s\n", backupIP);
+                    backup = rtree_connect(backupIP);
+                    IPBACKUP = backupIP;
+                }
+                
+            } else {
                 int primaryIPLen = 100;
                 char primaryIP[256] = "";
                 if(ZOK != zoo_get(zh, "/kvstore/backup", 0, primaryIP, &primaryIPLen, NULL)){
                     printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
                     exit(-1);
                 }
-                backup = rtree_connect(primaryIP);
+                IPPrimary = primaryIP;
             }
         }
-    }
-
+	}
 }
 
 
@@ -485,7 +503,11 @@ void *process_task(){
             if(backup != NULL){
                 printf("BACKUP\n");
                 struct entry_t *entrada = entry_create(strdup(task -> key), data_dup(data));
-                rtree_put(backup, entrada);
+                printf("13\n");
+                if(entrada != NULL){
+                    rtree_put(backup, entrada);
+                }  
+                printf("14\n");  
             }
             op_count++; //Mesmo se der erro devemos contar a operacao como executada
             data_destroy(data);
