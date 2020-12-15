@@ -60,21 +60,29 @@ char *IPBACKUP;
 char *IPPrimary;
 
 void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void *watcher_ctx) {
+    fprintf(stderr, "ENTRA AQUI\n"); 
 	zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
+    fprintf(stderr, "ENTRA AQUI2\n"); 
 	//int zoo_data_len = ZDATALEN; //TODO nao estah a ser usado 
 	if (state == ZOO_CONNECTED_STATE) { //TODO ver se dah para por simplesmente is_connected
-		if (type == ZOO_CHILD_EVENT) {
-	 	   /* Get the updated children and reset the watch */ 
- 			if (ZOK != zoo_wget_children(zh, root_path, child_watcher, watcher_ctx, children_list)) {
- 				fprintf(stderr, "Error setting watch at %s!\n", root_path); 
- 			}
+        fprintf(stderr, "ENTRA AQUI3\n"); 
+        if (type == ZOO_CHILD_EVENT) {
+            fprintf(stderr, "ENTRA AQUI4\n"); 
+            /* Get the updated children and reset the watch */ 
+
+            fprintf(stderr, "ENTRA AQUI5\n"); 
             //TODO apagar a parte de imprimir a lista
-			fprintf(stderr, "\n=== znode listing func=== [ %s ]", root_path); 
-			for (int i = 0; i < children_list->count; i++)  {
-				fprintf(stderr, "\n(%d): %s", i+1, children_list->data[i]);
-			}
-			fprintf(stderr, "\n=== done ===\n");
-	    } 
+            //fprintf(stderr, "AQUI CARALHO\n");
+            fprintf(stderr, "ENTRA AQUI6\n"); 
+            if (ZOK != zoo_wget_children(zh, root_path, child_watcher, watcher_ctx, children_list)) {
+                fprintf(stderr, "Error setting watch at %s!\n", root_path); 
+            }
+            fprintf(stderr, "\n=== znode listing func=== [ %s ]", root_path); 
+            for (int i = 0; i < children_list->count; i++)  {
+                fprintf(stderr, "\n(%d): %s", i+1, children_list->data[i]);
+            }
+            fprintf(stderr, "\n=== done ===\n");
+        }
 
         // ---------------------------------------------------------------------------------------------------------
         if(children_list -> count == 0){
@@ -90,7 +98,7 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
                 
                 backup = NULL;
                 
-                IPBACKUP = NULL;
+                //IPBACKUP = NULL;
                 //meter a null caso antes houvesse um backup;
             } else {
                 printf("1 Filho BACKUP\n");
@@ -122,7 +130,7 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
             printf("THIS SERVER ID: %s\n", server_ID);
             if(strcmp(server_ID, "/kvstore/primary") == 0){
                 if(backup == NULL){
-                    int backupIPLen = 100;
+                    int backupIPLen = 256;
                     char backupIP[256] = "";
                     if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
                         printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
@@ -133,7 +141,7 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
                     IPBACKUP = backupIP;
                 }
             } else {
-                int primaryIPLen = 100;
+                int primaryIPLen = 256;
                 char primaryIP[256] = "";
                 if(ZOK != zoo_get(zh, "/kvstore/primary", 0, primaryIP, &primaryIPLen, NULL)){
                     printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
@@ -145,6 +153,7 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
 	}
     free(children_list->data);
     free(children_list);
+    fprintf(stderr, "SAIU AQUI\n");
 }
 
 
@@ -307,7 +316,10 @@ void tree_skel_destroy(){
     tree_destroy(tree);
     
     zookeeper_close(zh);
-    
+    if(backup != NULL){
+        rtree_disconnect(backup);
+    }
+
     
     if(server_ID != NULL)
         free(server_ID);

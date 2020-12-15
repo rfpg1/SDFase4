@@ -72,7 +72,7 @@ int rtree_put(struct rtree_t *rtree, struct entry_t *entry){
     if(rtree == NULL){
         return 0;
     }
-    if(entry == NULL){
+    if(entry == NULL || entry -> value == NULL || entry -> value -> data == NULL || entry -> value -> datasize <= 0){
         return -1;
     }
     struct message_t *pedido = malloc(sizeof(struct message_t));
@@ -97,6 +97,10 @@ int rtree_put(struct rtree_t *rtree, struct entry_t *entry){
     if(resposta == NULL){
         perror("Erro ao mandar o pedido pela rede rtree_put\n");
         return -1;
+    }
+    if(resposta -> msg == NULL){
+        fprintf(stderr, "TESTE\n");
+        return 0;
     }
     message_t__free_unpacked(msg, NULL);
     entry_destroy(entry);
@@ -178,6 +182,11 @@ int rtree_del(struct rtree_t *rtree, char *key){
     if(resposta == NULL){
         perror("Erro ao mandar o pedido pela rede rtree_del\n");
         return -1;
+    }
+
+    if(resposta -> msg == NULL){
+        fprintf(stderr, "TESTE\n");
+        return 0;
     }
 
     message_t__free_unpacked(pedido -> msg, NULL);
