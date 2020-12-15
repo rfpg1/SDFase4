@@ -9,7 +9,6 @@
 
 
 struct rtree_t *rtree_connect(const char *address_port){
-    printf("6\n");
     struct rtree_t *rtree;
     struct sockaddr_in *server;
 
@@ -26,7 +25,6 @@ struct rtree_t *rtree_connect(const char *address_port){
         perror("Erro na alocação de memória no rtree_connect sockaddr_in");
         return NULL;
     }
-    printf("7\n");
     //Copia o IPAdress e a Porta para uma nova variavel
     char *addressEport = strdup(address_port);
     //Pega nessa nova variavel e separa-a por : para ir buscar o ipadress
@@ -44,7 +42,6 @@ struct rtree_t *rtree_connect(const char *address_port){
     }
     //Liga o server à arvore remota
     rtree -> sock_in = server;
-    printf("8\n");
     free(addressEport);
 
     //Liga-se ao socket
@@ -54,22 +51,18 @@ struct rtree_t *rtree_connect(const char *address_port){
         free(rtree);
         return NULL;
     }  
-    printf("9\n");
     return rtree;
 }
 
 int rtree_disconnect(struct rtree_t *rtree){
     if(rtree != NULL){
         //Fecha a ligação com o servidor
-        printf("10\n");
         if(network_close(rtree) < 0){
             perror("Erro a fechar a ligação TCP");
             return -1;
         }
-        printf("11\n");
         free(rtree -> sock_in);
         free(rtree);
-        printf("12\n");
     }
     
     return 0;
@@ -77,14 +70,11 @@ int rtree_disconnect(struct rtree_t *rtree){
 
 int rtree_put(struct rtree_t *rtree, struct entry_t *entry){
     if(rtree == NULL){
-        printf("Teste\n");
         return 0;
     }
-    printf("1\n");
     if(entry == NULL){
         return -1;
     }
-    printf("2\n");
     struct message_t *pedido = malloc(sizeof(struct message_t));
     MessageT *msg = malloc(sizeof(MessageT));
     //Aloca memoria para as estruturas de dados
@@ -92,7 +82,6 @@ int rtree_put(struct rtree_t *rtree, struct entry_t *entry){
         perror("Erro ao alocar memoria no rtree_put");
         return -1;
     }
-    printf("3\n");
     message_t__init(msg);
 
     msg -> opcode = MESSAGE_T__OPCODE__OP_PUT; //OPCode associado 
@@ -109,7 +98,6 @@ int rtree_put(struct rtree_t *rtree, struct entry_t *entry){
         perror("Erro ao mandar o pedido pela rede rtree_put\n");
         return -1;
     }
-    printf("4\n");
     message_t__free_unpacked(msg, NULL);
     entry_destroy(entry);
     
@@ -119,7 +107,6 @@ int rtree_put(struct rtree_t *rtree, struct entry_t *entry){
     if(resposta -> msg -> opcode == MESSAGE_T__OPCODE__OP_PUT + 1 && resposta -> msg -> c_type == MESSAGE_T__C_TYPE__CT_RESULT){
         ret = resposta -> msg -> last_assigned;
     }  
-    printf("5\n");
     message_t__free_unpacked(resposta->msg, NULL);
     free(resposta);
     return ret;

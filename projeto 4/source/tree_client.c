@@ -25,6 +25,7 @@ static char *watcher_ctx = "ZooKeeper Data Watcher";
 char str[50]; 
 
 void closeClient(){
+    
     if(primary != NULL){
         printf("Adeus primary\n");
         rtree_disconnect(primary);
@@ -34,8 +35,10 @@ void closeClient(){
         printf("Adeus backup\n");
         rtree_disconnect(backup); 
     }
-         
-    
+    zookeeper_close(zh);
+    //free(zh);   
+    primary = NULL;
+    backup = NULL;
     exit(0);
 }
 
@@ -74,16 +77,20 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
         if(strcmp(children_list -> data[0], "primary") == 0){
             printf("ENTRA NO ELSEIF TREE_CLIENT PRIMARY\n");
             
-            if(backup != NULL)
+            if(backup != NULL){
                 rtree_disconnect(backup);
+            }
+            
             backup = NULL;
             
             //meter a null caso antes houvesse um backup;
         } else {
             printf("ENTRA NO ELSEIF TREE_CLIENT ELSE\n");
             
-            if(primary != NULL)
+            if(primary != NULL){
                 rtree_disconnect(primary);
+            }
+                
             primary = NULL;
             
             int backupIPLen = 100;
@@ -98,11 +105,11 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
             */
             //primary = rtree_connect(backupIP);
             primary = backup;
-            /*
+            
             if(primary != NULL){
                 primary = backup;
             }
-            */
+            
             backup = NULL;
         }
     } else {
@@ -116,8 +123,8 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
             backup = rtree_connect(backupIP);
         }
     }
-
-
+    free(children_list->data);
+    free(children_list);
 }
 
 
@@ -191,8 +198,9 @@ int main(int argc, char** argv){
             default:
                 printf("Erro\n");
             //do nothing
-        }             
-        
+        }         
+        free(children_list->data);    
+        free(children_list);
     } 
     int last_assigned = 0;
     if(primary == NULL){

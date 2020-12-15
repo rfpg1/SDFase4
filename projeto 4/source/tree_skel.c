@@ -77,8 +77,9 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
 	    } 
 
         // ---------------------------------------------------------------------------------------------------------
-
-        if(children_list -> count == 1){
+        if(children_list -> count == 0){
+            //Do nothing
+        } else if(children_list -> count == 1){
             printf("ENTRA NO IF TREE_SKEL\n");
             if(strcmp(children_list -> data[0], "primary") == 0){
                 printf("1 Filho PRIMARY\n");
@@ -86,6 +87,7 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
                 if(backup != NULL){
                     rtree_disconnect(backup);
                 }
+                
                 backup = NULL;
                 
                 IPBACKUP = NULL;
@@ -93,7 +95,7 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
             } else {
                 printf("1 Filho BACKUP\n");
                 
-                int backupIPLen = 100;
+                int backupIPLen = 256;
                 
                 char backupIP[256] = "";
                 
@@ -130,11 +132,10 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
                     backup = rtree_connect(backupIP);
                     IPBACKUP = backupIP;
                 }
-                
             } else {
                 int primaryIPLen = 100;
                 char primaryIP[256] = "";
-                if(ZOK != zoo_get(zh, "/kvstore/backup", 0, primaryIP, &primaryIPLen, NULL)){
+                if(ZOK != zoo_get(zh, "/kvstore/primary", 0, primaryIP, &primaryIPLen, NULL)){
                     printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
                     exit(-1);
                 }
@@ -142,6 +143,8 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
             }
         }
 	}
+    free(children_list->data);
+    free(children_list);
 }
 
 
@@ -269,10 +272,9 @@ int tree_skel_init(char *port, char *ip_port_zk){
             printf("Demasiados servers");
             return -1;
         }
-
+        free(children_list->data);
+        free(children_list);
     }
-
-
 
     if(tree == NULL){
         tree = tree_create();
@@ -303,6 +305,22 @@ void tree_skel_destroy(){
     //Destruir os mutexes e variaveis de condicao
     mutex_cond_destroy();
     tree_destroy(tree);
+    
+    zookeeper_close(zh);
+    
+    
+    if(server_ID != NULL)
+        free(server_ID);
+    /*
+    if(IPPrimary != NULL)
+        free(IPPrimary);
+    if(IPBACKUP != NULL)
+        free(IPBACKUP);
+    
+    if(zh != NULL)
+        free(zh);
+    */
+    
 }
 
 int invoke(struct message_t *msg){
@@ -503,11 +521,9 @@ void *process_task(){
             if(backup != NULL){
                 printf("BACKUP\n");
                 struct entry_t *entrada = entry_create(strdup(task -> key), data_dup(data));
-                printf("13\n");
                 if(entrada != NULL){
                     rtree_put(backup, entrada);
                 }  
-                printf("14\n");  
             }
             op_count++; //Mesmo se der erro devemos contar a operacao como executada
             data_destroy(data);
