@@ -387,6 +387,5 @@ int main(int argc, char** argv){
                 printf("Método não existe!\n");
             }
         }
-
     }
 }
