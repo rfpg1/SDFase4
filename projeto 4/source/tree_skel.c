@@ -10,20 +10,19 @@
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
-///////////fase4/////////////
-#include <errno.h>
-#include <unistd.h> //para funcao sleep()
 
-#include <netdb.h> //ver se eh preciso
-#include <sys/types.h> //ver se eh preciso
-#include <sys/socket.h> //ver se eh preciso
-#include <netinet/in.h> //ver se eh preciso
+#include <errno.h>
+#include <unistd.h>
+
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/socket.h> 
+#include <netinet/in.h>
 #include <pthread.h>
-#include <arpa/inet.h> //ver se eh preciso
+#include <arpa/inet.h>
 
 #include "client_stub-private.h"
 #include "client_stub.h"
-////////////////////////////////////
 
 #include "tree.h"
 #include "message-private.h"
@@ -60,20 +59,13 @@ char *IPBACKUP;
 char *IPPrimary;
 
 void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void *watcher_ctx) {
-    fprintf(stderr, "ENTRA AQUI\n"); 
 	zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
-    fprintf(stderr, "ENTRA AQUI2\n"); 
-	//int zoo_data_len = ZDATALEN; //TODO nao estah a ser usado 
-	if (state == ZOO_CONNECTED_STATE) { //TODO ver se dah para por simplesmente is_connected
-        fprintf(stderr, "ENTRA AQUI3\n"); 
+	
+	if (state == ZOO_CONNECTED_STATE) { 
         if (type == ZOO_CHILD_EVENT) {
-            fprintf(stderr, "ENTRA AQUI4\n"); 
             /* Get the updated children and reset the watch */ 
 
-            fprintf(stderr, "ENTRA AQUI5\n"); 
             //TODO apagar a parte de imprimir a lista
-            //fprintf(stderr, "AQUI CARALHO\n");
-            fprintf(stderr, "ENTRA AQUI6\n"); 
             if (ZOK != zoo_wget_children(zh, root_path, child_watcher, watcher_ctx, children_list)) {
                 fprintf(stderr, "Error setting watch at %s!\n", root_path); 
             }
@@ -82,78 +74,65 @@ void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void 
                 fprintf(stderr, "\n(%d): %s", i+1, children_list->data[i]);
             }
             fprintf(stderr, "\n=== done ===\n");
-        }
-
-        // ---------------------------------------------------------------------------------------------------------
-        if(children_list -> count == 0){
-            //Do nothing
-        } else if(children_list -> count == 1){
-            printf("ENTRA NO IF TREE_SKEL\n");
-            if(strcmp(children_list -> data[0], "primary") == 0){
-                printf("1 Filho PRIMARY\n");
-                
-                if(backup != NULL){
-                    rtree_disconnect(backup);
-                }
-                
-                backup = NULL;
-                
-                //IPBACKUP = NULL;
-                //meter a null caso antes houvesse um backup;
-            } else {
-                printf("1 Filho BACKUP\n");
-                
-                int backupIPLen = 256;
-                
-                char backupIP[256] = "";
-                
-                if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
-                    printf("ERRO A IR BUSCAR DATA BACKUP 1 FILHO\n");
-                    exit(-1);
-                }
-                IPPrimary = NULL;
-                if(ZOK != zoo_delete(zh, "/kvstore/backup", -1)){
-                    printf("DELETE DO BACKUP\n");
-                    exit(-1);
-                }
-                char *node_path = "/kvstore/primary";
-                if(ZOK != zoo_create(zh, node_path, backupIP, strlen(backupIP), &ZOO_OPEN_ACL_UNSAFE, ZOO_EPHEMERAL, NULL, 0)){
-                    fprintf(stderr, "Error creating znode from path %s!\n", node_path);
-                    exit(-1);
-                }
-                server_ID = "/kvstore/primary";
-                //TODO transformar backup em primary
-                //Delete do znode atual
-                //criação de um novo   
-            }
-        } else {
-            printf("THIS SERVER ID: %s\n", server_ID);
-            if(strcmp(server_ID, "/kvstore/primary") == 0){
-                if(backup == NULL){
+            // ---------------------------------------------------------------------------------------------------------
+            if(children_list -> count == 0){
+                //Do nothing
+            } else if(children_list -> count == 1){
+                if(strcmp(children_list -> data[0], "primary") == 0){
+                    if(backup != NULL){
+                        rtree_disconnect(backup);
+                    }
+                    backup = NULL;
+                    IPBACKUP = NULL;
+                    //meter a null caso antes houvesse um backup;
+                } else {
                     int backupIPLen = 256;
                     char backupIP[256] = "";
                     if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
+                        printf("ERRO A IR BUSCAR DATA BACKUP 1 FILHO\n");
+                        exit(-1);
+                    }
+                    IPPrimary = NULL;
+                    if(ZOK != zoo_delete(zh, "/kvstore/backup", -1)){
+                        printf("DELETE DO BACKUP\n");
+                        exit(-1);
+                    }
+                    char *node_path = "/kvstore/primary";
+                    if(ZOK != zoo_create(zh, node_path, backupIP, strlen(backupIP), &ZOO_OPEN_ACL_UNSAFE, ZOO_EPHEMERAL, NULL, 0)){
+                        fprintf(stderr, "Error creating znode from path %s!\n", node_path);
+                        exit(-1);
+                    }
+                    server_ID = "/kvstore/primary"; 
+                }
+            } else {
+                printf("THIS SERVER ID: %s\n", server_ID);
+                if(strcmp(server_ID, "/kvstore/primary") == 0){
+                    if(backup == NULL){
+                        int backupIPLen = 256;
+                        char backupIP[256] = "";
+                        if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
+                            printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
+                            exit(-1);
+                        }
+                        printf("BACKIP: %s\n", backupIP);
+                        backup = rtree_connect(backupIP);
+                        IPBACKUP = backupIP;
+                    }
+                } else {
+                    int primaryIPLen = 256;
+                    char primaryIP[256] = "";
+                    if(ZOK != zoo_get(zh, "/kvstore/primary", 0, primaryIP, &primaryIPLen, NULL)){
                         printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
                         exit(-1);
                     }
-                    printf("BACKIP: %s\n", backupIP);
-                    backup = rtree_connect(backupIP);
-                    IPBACKUP = backupIP;
+                    IPPrimary = primaryIP;
+                    printf("PRIMARYIP: %s\n", primaryIP);
                 }
-            } else {
-                int primaryIPLen = 256;
-                char primaryIP[256] = "";
-                if(ZOK != zoo_get(zh, "/kvstore/primary", 0, primaryIP, &primaryIPLen, NULL)){
-                    printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
-                    exit(-1);
-                }
-                IPPrimary = primaryIP;
             }
-        }
+        }        
 	}
     free(children_list->data);
     free(children_list);
-    fprintf(stderr, "SAIU AQUI\n");
 }
 
 
@@ -188,12 +167,12 @@ int tree_skel_init(char *port, char *ip_port_zk){
         }
         zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
 
-        /*-----------------------mostrar os child nodes de /kvstore atuais----------------------*/
+        /*-----------------------ir buscar os child nodes de /kvstore atuais----------------------*/
         if (ZOK != zoo_wget_children(zh, root_path, &child_watcher, watcher_ctx, children_list)) {/*quando apanha sinal, chama o child_watcher()*/
 			fprintf(stderr, "Error setting watch at %s!\n", root_path); //compromete transparencia?
 		}
 
-        if(children_list -> count < 1){
+        if(children_list -> count < 1){ //Caso seja o primeiro filho
             /********************************************/
             //Criar prefixo para o primary
             char node_path[50] = "";
@@ -234,10 +213,10 @@ int tree_skel_init(char *port, char *ip_port_zk){
             }
             fprintf(stderr, "Ephemeral ZNode created! ZNode path: %s\n", server_ID);
             sleep(5);
-        } else if(children_list -> count == 1){
+        } else if(children_list -> count == 1){ //Caso seja o 2 filho
             
             /********************************************/
-            //Criar prefixo para o primary
+            //Criar prefixo para o backup
             char node_path[50] = "";
             strcat(node_path, root_path);
             strcat(node_path, "/backup");
@@ -277,7 +256,7 @@ int tree_skel_init(char *port, char *ip_port_zk){
             fprintf(stderr, "Ephemeral ZNode created! ZNode path: %s\n", server_ID);
             sleep(5);
         } 
-        else {
+        else { //Caso seja o 3 filho
             printf("Demasiados servers");
             return -1;
         }
@@ -316,23 +295,10 @@ void tree_skel_destroy(){
     tree_destroy(tree);
     
     zookeeper_close(zh);
+    
     if(backup != NULL){
         rtree_disconnect(backup);
-    }
-
-    
-    if(server_ID != NULL)
-        free(server_ID);
-    /*
-    if(IPPrimary != NULL)
-        free(IPPrimary);
-    if(IPBACKUP != NULL)
-        free(IPBACKUP);
-    
-    if(zh != NULL)
-        free(zh);
-    */
-    
+    }  
 }
 
 int invoke(struct message_t *msg){

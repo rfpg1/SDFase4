@@ -27,17 +27,14 @@ char str[50];
 void closeClient(){
     
     if(primary != NULL){
-        printf("Adeus primary\n");
         rtree_disconnect(primary);
     }
     
     if(backup != NULL){
-        printf("Adeus backup\n");
         rtree_disconnect(backup); 
     }
     
-    //zookeeper_close(zh);
-    //free(zh);   
+    zookeeper_close(zh);
     primary = NULL;
     backup = NULL;
     exit(0);
@@ -55,67 +52,42 @@ void connection_watcher(zhandle_t *zzh, int type, int state, const char *path, v
 
 void child_watcher(zhandle_t *wzh, int type, int state, const char *zpath, void *watcher_ctx) {
 	zoo_string* children_list =	(zoo_string *) malloc(sizeof(zoo_string));
-	//int zoo_data_len = ZDATALEN; //TODO nao estah a ser usado 
-	if (state == ZOO_CONNECTED_STATE) { //TODO ver se dah para por simplesmente is_connected
+	
+	if (state == ZOO_CONNECTED_STATE) { 
 		if (type == ZOO_CHILD_EVENT) {
 	 	   /* Get the updated children and reset the watch */ 
  			if (ZOK != zoo_wget_children(zh, root_path, child_watcher, watcher_ctx, children_list)) {
  				fprintf(stderr, "Error setting watch at %s!\n", root_path); 
  			}
-            //TODO apagar a parte de imprimir a lista
-			fprintf(stderr, "\n=== znode listing func=== [ %s ]", root_path); 
-			for (int i = 0; i < children_list->count; i++)  {
-				fprintf(stderr, "\n(%d): %s", i+1, children_list->data[i]);
-			}
-			fprintf(stderr, "\n=== done ===\n");
 	    } 
         if(children_list -> count == 0){
             //Do nothing
         } else if(children_list -> count == 1){
-            printf("ENTRA NO ELSEIF TREE_CLIENT\n");
             if(strcmp(children_list -> data[0], "primary") == 0){
-                printf("ENTRA NO ELSEIF TREE_CLIENT PRIMARY\n");
-                /*
                 if(backup != NULL){
                     rtree_disconnect(backup);
                 }
-                
                 backup = NULL;
-                */
                 //meter a null caso antes houvesse um backup;
             } else {
-                printf("ENTRA NO ELSEIF TREE_CLIENT ELSE\n");
-                /*
+                
                 if(primary != NULL){
                     rtree_disconnect(primary);
                 }
-                    
+                
                 primary = NULL;
-                */
-                int backupIPLen = 100;
+                int backupIPLen = 256;
                 char backupIP[256] = "";
                 if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
                     printf("ERRO A IR BUSCAR DATA BACKUP 1 FILHO\n");
                 }
-                /*
-                if(backup != NULL)
-                    rtree_disconnect(backup); //Problema, fazer esta linha fecha a linha de comandos atual e dá merda como atualizar isto?
+
+                primary = backup;                
                 backup = NULL;
-                */
-                //primary = rtree_connect(backupIP);
-                primary = backup;
-                /*
-                if(primary != NULL){
-                    primary = backup;
-                }
-                */
-                backup = NULL;
-                
             }
         } else {
-            printf("ENTRA NO ELSE\n");
             if(backup == NULL){
-                int backupIPLen = 100;
+                int backupIPLen = 256;
                 char backupIP[256] = "";
                 if(ZOK != zoo_get(zh, "/kvstore/backup", 0, backupIP, &backupIPLen, NULL)){
                     printf("ERRO A IR BUSCAR DATA BACKUP 2 FILHOS\n");
@@ -169,12 +141,10 @@ int main(int argc, char** argv){
         
         switch(children_list -> count){
             case 0:
-            printf("CASO 0\n");
                 perror("Não há servidores ligados");
                 return -1;
             break;
             case 1:
-                printf("CASO 1\n");
                 if(ZOK != zoo_get(zh, "/kvstore/primary", 0, primaryIP, &primaryIPLen, NULL)){
                     printf("ERRO A IR BUSCAR DATA SWITCH 1 FILHO PRIMARY\n");
                     return -1;
@@ -182,7 +152,6 @@ int main(int argc, char** argv){
                 primary = rtree_connect(primaryIP); //Ligação ao servidor!
             break;
             case 2:
-            printf("CASO 2\n");
                 if(ZOK != zoo_get(zh, "/kvstore/primary", 0, primaryIP, &primaryIPLen, NULL)){
                     printf("ERRO A IR BUSCAR DATA SWITCH 2 FILHOS PRIMARY \n");
                     return -1;
@@ -191,9 +160,7 @@ int main(int argc, char** argv){
                     printf("ERRO A IR BUSCAR DATA SWITCH 2 FILHOS BACKUP \n");
                     return -1;
                 }
-                printf("IPPRIMARY: %s\n", primaryIP);
                 primary = rtree_connect(primaryIP); //Ligação ao servidor!
-                printf("IPBACKUP: %s\n", backupIP);
                 backup = rtree_connect(backupIP); //Ligação ao servidor!
             break;
             default:
@@ -247,7 +214,7 @@ int main(int argc, char** argv){
                 int result = rtree_put(primary, entry);
                 last_assigned++;
                 if(result == 0){
-                    printf("Teste\n");
+                    printf("Teste\n\n\n\n");
                 }
                 if(result < 0){
                     printf("Erro no put!\n");
